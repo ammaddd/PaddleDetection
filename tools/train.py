@@ -22,7 +22,7 @@ parent_path = os.path.abspath(os.path.join(__file__, *(['..'] * 2)))
 if parent_path not in sys.path:
     sys.path.append(parent_path)
 
-from comet_ml import Experiment
+from ppdet.utils.comet_utils import CometLogger
 import time
 import numpy as np
 import random
@@ -60,8 +60,8 @@ def main():
                     and int(env['PADDLE_TRAINERS_NUM']) > 1
     num_trainers = int(env.get('PADDLE_TRAINERS_NUM', 1))
     
-    experiment = Experiment(auto_metric_logging=False)
-    experiment.log_others(vars(FLAGS))
+    comet_logger = CometLogger(FLAGS.comet, auto_metric_logging=False)
+    comet_logger.log_others(vars(FLAGS))
 
     if FLAGS.dist:
         trainer_id = int(env['PADDLE_TRAINER_ID'])
@@ -75,7 +75,7 @@ def main():
 
     cfg = load_config(FLAGS.config)
     merge_config(FLAGS.opt)
-    experiment.log_asset_data(cfg, "cfg.yaml")
+    comet_logger.log_asset_data(cfg, "cfg.yaml")
     check_config(cfg)
     # check if set use_gpu=True in paddlepaddle cpu version
     check_gpu(cfg.use_gpu)
@@ -275,9 +275,9 @@ def main():
         eta = str(datetime.timedelta(seconds=int(eta_sec)))
         outs = exe.run(compiled_train_prog, fetch_list=train_values)
         stats = {k: np.array(v).mean() for k, v in zip(train_keys, outs[:-1])}
-        experiment.log_metrics(stats, step=it)
-        experiment.log_metric("learning_rate", np.mean(outs[-1]),
-                              step=it)
+        comet_logger.log_metrics(stats, step=it)
+        comet_logger.log_metric("learning_rate", np.mean(outs[-1]),
+                                step=it)
         # use vdl-paddle to log loss
         if FLAGS.use_vdl:
             if it % cfg.log_iter == 0:
@@ -307,8 +307,8 @@ def main():
             if 'use_ema' in cfg and cfg['use_ema']:
                 exe.run(ema.apply_program)
             checkpoint.save(exe, train_prog, os.path.join(save_dir, save_name))
-            experiment.log_model("PaddleDet", os.path.join(save_dir,
-                                 save_name+".pdparams"))
+            comet_logger.log_model("PaddleDet", os.path.join(save_dir,
+                                   save_name+".pdparams"))
             print(os.path.join(save_dir, save_name))
 
             if FLAGS.eval:
@@ -340,11 +340,11 @@ def main():
                     best_box_ap_list[1] = it
                     checkpoint.save(exe, train_prog,
                                     os.path.join(save_dir, "best_model"))
-                    experiment.log_model("PaddleDet", os.path.join(save_dir,
-                                         "best_model.pdparams"))
+                    comet_logger.log_model("PaddleDet", os.path.join(save_dir,
+                                           "best_model.pdparams"))
                 logger.info("Best test box ap: {}, in iter: {}".format(
                     best_box_ap_list[0], best_box_ap_list[1]))
-                experiment.log_metric("mAP", box_ap_stats[0], step=it)
+                comet_logger.log_metric("mAP", box_ap_stats[0], step=it)
 
             if 'use_ema' in cfg and cfg['use_ema']:
                 exe.run(ema.restore_program)
@@ -409,5 +409,10 @@ if __name__ == '__main__':
         type=str,
         default="./detection.profiler",
         help='The profiler output file path. (used for benchmark)')
+    parser.add_argument(
+        '--comet',
+        type=bool,
+        default=False,
+        help='enable comet logging (if comet installed)')
     FLAGS = parser.parse_args()
     main()
